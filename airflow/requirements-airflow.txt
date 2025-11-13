@@ -1,0 +1,7 @@
+requests
+opensearch-py==2.4.2
+pdfminer.six==20231228
+llama-index
+llama-index-vector-stores-opensearch
+llama-index-embeddings-ollama
+PyPDF2
