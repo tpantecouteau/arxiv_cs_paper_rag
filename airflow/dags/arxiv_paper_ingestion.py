@@ -3,8 +3,11 @@ from datetime import datetime, timedelta
 from airflow.operators.python import (
     PythonOperator,  # pyright: ignore[reportMissingImports]
 )
+from arxiv_ingestion.chunk_texts import chunk_texts
+from arxiv_ingestion.download_pdfs import download_pfds
+from arxiv_ingestion.embed_index import embed_index_opensearch
+from arxiv_ingestion.extract_texts import extract_texts
 from arxiv_ingestion.fetch import fetch_arxiv_data
-from arxiv_ingestion.index import index_metadata_llama
 from arxiv_ingestion.parse import parse_arxiv_data
 from arxiv_ingestion.persist_to_db import persist_via_api
 from utils import critical_task
@@ -38,7 +41,27 @@ def persist_safe(**context):
 
 @critical_task
 def index_safe(**context):
-    index_metadata_llama(**context)
+    embed_index_opensearch(**context)
+
+
+@critical_task
+def download_pdfs_safe(**context):
+    download_pfds(**context)
+
+
+@critical_task
+def extract_texts_safe(**context):
+    extract_texts(**context)
+
+
+@critical_task
+def chunk_texts_safe(**context):
+    chunk_texts(**context)
+
+
+@critical_task
+def index_metadata_safe(**context):
+    embed_index_opensearch(**context)
 
 
 with DAG(
@@ -57,10 +80,28 @@ with DAG(
     persist_task = PythonOperator(
         task_id="persist_to_db", python_callable=persist_safe, provide_context=True
     )
-    index_task = PythonOperator(
-        task_id="index_metadata_opensearch",
-        python_callable=index_safe,
+    download_task = PythonOperator(
+        task_id="download_pdfs",
+        python_callable=download_pdfs_safe,
         provide_context=True,
     )
-
-    fetch_task >> parse_task >> persist_task >> index_task
+    extract_task = PythonOperator(
+        task_id="extract_texts",
+        python_callable=extract_texts_safe,
+        provide_context=True,
+    )
+    chunk_task = PythonOperator(task_id="chunk_texts", python_callable=chunk_texts_safe)
+    index_task = PythonOperator(
+        task_id="index_metadata",
+        python_callable=index_metadata_safe,
+        provide_context=True,
+    )
+    (
+        fetch_task
+        >> parse_task
+        >> persist_task
+        >> download_task
+        >> extract_task
+        >> chunk_task
+        >> index_task
+    )

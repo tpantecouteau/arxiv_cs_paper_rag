@@ -14,6 +14,8 @@ services:
     volumes:
       - ./src:/app/src
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      - OLLAMA_MODEL=mistral
     restart: unless-stopped
 
   # ---------------- POSTGRES ----------------
@@ -27,11 +29,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-arxiv_user} -d ${POSTGRES_DB:-arxiv_db}",
-        ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arxiv_user} -d ${POSTGRES_DB:-arxiv_db}" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -55,7 +53,7 @@ services:
     ports:
       - "9200:9200"
     healthcheck:
-      test: ["CMD", "curl", "-sSf", "http://localhost:9200"]
+      test: [ "CMD", "curl", "-sSf", "http://localhost:9200" ]
       interval: 5s
       timeout: 5s
       retries: 3
@@ -90,9 +88,7 @@ services:
       - ollama_data:/root/.ollama
     restart: unless-stopped
     command: >
-      serve &&
-      pull nomic-embed-text &&
-      pull mistral:latest
+      serve && pull nomic-embed-text && pull mistral:latest
 
   # ---------------- APACHE AIRFLOW ----------------
   airflow:
@@ -110,6 +106,7 @@ services:
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - AIRFLOW__WEBSERVER__SECRET_KEY=secretkey
+      - AIRFLOW__WEBSERVER__WEB_SERVER_MASTER_TIMEOUT=300
       - PYTHONPATH=/opt/airflow/scripts:$PYTHONPATH
     ports:
       - "8080:8080"

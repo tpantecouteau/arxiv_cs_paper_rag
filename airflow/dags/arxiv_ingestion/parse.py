@@ -1,7 +1,7 @@
 import xml.etree.ElementTree as ET
 
 
-def parse_arxiv_data(**context) -> list[dict]:
+def parse_arxiv_data(**context) -> dict[dict]:
     """Parse arXiv XML data into a list of dictionaries."""
     ti = context["ti"]
     xml_data = ti.xcom_pull(key="arxiv_xml_data", task_ids="fetch_arxiv_data")
@@ -10,7 +10,7 @@ def parse_arxiv_data(**context) -> list[dict]:
         print("⚠️ No XML data found in XCom.")
         return []
 
-    papers = []
+    papers = {}
     root = ET.fromstring(xml_data)
 
     for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
@@ -44,7 +44,7 @@ def parse_arxiv_data(**context) -> list[dict]:
             "published_at": published,
         }
 
-        papers.append(paper)
+        papers[arxiv_id] = paper
 
     print(f"✅ Parsed {len(papers)} papers.")
     ti.xcom_push(key="parsed_papers", value=papers)

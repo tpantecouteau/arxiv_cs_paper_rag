@@ -1,20 +1,22 @@
 import asyncio
 
 import nest_asyncio
-from fastapi import APIRouter, HTTPException
-from llama_index.core import PromptTemplate, StorageContext, VectorStoreIndex
-from llama_index.embeddings.ollama import OllamaEmbedding
+from fastapi import APIRouter, Depends, HTTPException
+from llama_index.core import PromptTemplate, VectorStoreIndex
 from llama_index.llms.ollama import Ollama
-from llama_index.vector_stores.opensearch import (
-    OpensearchVectorClient,
-    OpensearchVectorStore,
-)
+
+from ..dependencies import get_index, get_llm
 
 router_rag = APIRouter(prefix="/rag", tags=["RAG"])
 
 
 @router_rag.get("/query")
-def rag_query(query: str, k: int = 3):
+def rag_query(
+    query: str,
+    k: int = 5,
+    llm: Ollama = Depends(get_llm),
+    index: VectorStoreIndex = Depends(get_index),
+):
     """
     Pose une question (query) et renvoie la réponse générée à partir des chunks vectorisés.
     """
@@ -28,38 +30,15 @@ def rag_query(query: str, k: int = 3):
 
         print(f"\n🔍 Incoming query: {query}")
 
-        # --- 2️⃣ Init LLM + Embedding ---
-        llm = Ollama(
-            model="mistral",
-            base_url="http://ollama:11434",
-            request_timeout=120.0,
-            temperature=0.2,
-        )
-        embed_model = OllamaEmbedding(
-            model_name="nomic-embed-text",
-            base_url="http://ollama:11434",
-        )
-
-        # --- 3️⃣ Connect OpenSearch ---
-        client = OpensearchVectorClient(
-            endpoint=["http://opensearch:9200"],
-            index="paper_chunks_llama",
-            dim=768,
-            text_field="text",
-            embedding_field="embedding",
-        )
-        vector_store = OpensearchVectorStore(client)
-        storage_context = StorageContext.from_defaults(vector_store=vector_store)
-
-        # --- 4️⃣ Load index ---
-        index = VectorStoreIndex.from_vector_store(
-            vector_store, storage_context=storage_context, embed_model=embed_model
-        )
-
         # --- 5️⃣ Prompt personnalisé ---
         prompt_template = PromptTemplate(
-            "You are an expert research assistant. "
-            "Answer concisely and factually using only the context provided below.\n\n"
+            "You are an expert scientific research assistant. Answer ONLY using the provided context.\n\n"
+            "CRITICAL: If the question mentions a specific example (like \"I like fish, especially dolphins\"), "
+            "you MUST provide TWO explanations:\n"
+            "1. FIRST: Explain the literal contradiction in the example itself (e.g., why dolphins aren't fish)\n"
+            "2. SECOND: Explain the broader research problem the paper addresses\n\n"
+            "Format your answer with clear sections for each explanation.\n"
+            "If information is missing from context, state that explicitly. Do NOT hallucinate.\n\n"
             "Context:\n{context_str}\n\n"
             "Question: {query_str}\n\n"
             "Answer:"
@@ -71,6 +50,7 @@ def rag_query(query: str, k: int = 3):
             llm=llm,
             similarity_top_k=k,
             text_qa_template=prompt_template,
+            response_mode="compact",
         )
 
         # --- 7️⃣ Exécution de la requête ---
@@ -83,9 +63,11 @@ def rag_query(query: str, k: int = 3):
 
         for i, node in enumerate(response.source_nodes, 1):
             meta = node.node.metadata
-            text = node.node.text[:400].replace("\n", " ")
+            text = node.node.text[:800].replace("\n", " ")
             print(f"📄 [{i}] Source Metadata: {meta}")
             print(f"   Text Preview: {text}...\n")
+            print(f"📏 Chunk length: {len(node.node.text)} chars")
+            print(f"📌 Score: {node.score}")
 
         print("🧾 Final Answer:")
         print(str(response))
@@ -97,7 +79,7 @@ def rag_query(query: str, k: int = 3):
             "sources": [
                 {
                     "metadata": node.node.metadata,
-                    "preview": node.node.text[:250],
+                    "preview": node.node.text[:800],
                     "score": getattr(node, "score", None),
                 }
                 for node in response.source_nodes
