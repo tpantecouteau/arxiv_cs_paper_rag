@@ -337,6 +337,3 @@ For issues or questions:
 - Open an issue on GitHub
 - Check existing documentation
 - Review troubleshooting section
-=======
-=======
->>>>>>> d082d21172fbed6585104e142dcdb37e3
