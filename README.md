@@ -337,5 +337,9 @@ For issues or questions:
 - Open an issue on GitHub
 - Check existing documentation
 - Review troubleshooting section
+<<<<<<< HEAD
 
 ---
+=======
+=======
+>>>>>>> d082d21172fbed6585104e142dcdb37e3f8ac431
