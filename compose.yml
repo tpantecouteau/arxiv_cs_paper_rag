@@ -15,7 +15,7 @@ services:
       - ./src:/app/src
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
-      - OLLAMA_MODEL=mistral
+      - OLLAMA_MODEL=llama3.2:1b
     restart: unless-stopped
 
   # ---------------- POSTGRES ----------------
@@ -88,7 +88,7 @@ services:
       - ollama_data:/root/.ollama
     restart: unless-stopped
     command: >
-      serve && pull nomic-embed-text && pull mistral:latest
+      serve && pull nomic-embed-text && pull llama3.2:1b
 
   # ---------------- APACHE AIRFLOW ----------------
   airflow:
@@ -115,6 +115,7 @@ services:
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/requirements-airflow.txt:/requirements.txt
       - ./airflow/scripts:/opt/airflow/scripts
+      - ./src:/opt/airflow/src
     command: >
       bash -c "
         pip install --no-cache-dir -r /requirements.txt &&

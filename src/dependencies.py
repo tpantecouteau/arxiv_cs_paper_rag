@@ -1,4 +1,5 @@
 from functools import lru_cache
+import asyncio
 
 from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.embeddings.ollama import OllamaEmbedding
@@ -13,6 +14,10 @@ from .config import settings
 
 @lru_cache
 def get_llm() -> Ollama:
+    """
+    Get the Ollama LLM instance.
+    Uses LRU cache to return the same instance.
+    """
     return Ollama(
         model=settings.OLLAMA_MODEL,
         base_url=settings.OLLAMA_HOST,
@@ -23,16 +28,22 @@ def get_llm() -> Ollama:
 
 @lru_cache
 def get_embed_model() -> OllamaEmbedding:
+    """
+    Get the Ollama Embedding model instance.
+    Uses LRU cache to return the same instance.
+    """
     return OllamaEmbedding(
         model_name=settings.OLLAMA_EMBED_MODEL,
         base_url=settings.OLLAMA_HOST,
     )
 
 
-import asyncio
-
 @lru_cache
 def get_vector_store() -> OpensearchVectorStore:
+    """
+    Get the OpenSearch Vector Store instance.
+    Initializes the asyncio event loop if needed.
+    """
     try:
         asyncio.get_event_loop()
     except RuntimeError:
@@ -50,6 +61,10 @@ def get_vector_store() -> OpensearchVectorStore:
 
 
 def get_index() -> VectorStoreIndex:
+    """
+    Get the LlamaIndex VectorStoreIndex.
+    Combines the vector store and embedding model.
+    """
     vector_store = get_vector_store()
     embed_model = get_embed_model()
     storage_context = StorageContext.from_defaults(vector_store=vector_store)

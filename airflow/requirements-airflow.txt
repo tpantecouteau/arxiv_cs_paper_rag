@@ -6,3 +6,6 @@ llama-index-vector-stores-opensearch
 llama-index-embeddings-ollama
 PyPDF2
 pymupdf
+llama-index-llms-ollama
+nest_asyncio
+pydantic-settings

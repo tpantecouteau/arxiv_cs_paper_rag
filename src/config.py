@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # Ollama
     OLLAMA_HOST: str = "http://ollama:11434"
-    OLLAMA_MODEL: str = "mistral"
+    OLLAMA_MODEL: str = "llama3.2:1b"
     OLLAMA_EMBED_MODEL: str = "mxbai-embed-large"
     OLLAMA_TIMEOUT: float = 300.0
     OLLAMA_TEMPERATURE: float = 0.2

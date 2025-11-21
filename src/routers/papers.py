@@ -65,3 +65,18 @@ def delete_all_papers(session: Session = Depends(get_session)) -> dict:
 
     session.commit()
     return {"deleted": deleted_count}
+
+@router_paper.patch("/{arxiv_id}/status", response_model=Paper)
+def update_paper_status(
+    arxiv_id: str, status: str, session: Session = Depends(get_session)
+) -> Paper:
+    """Update the status of a paper."""
+    paper = session.exec(select(Paper).where(Paper.arxiv_id == arxiv_id)).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    
+    paper.status = status
+    session.add(paper)
+    session.commit()
+    session.refresh(paper)
+    return paper

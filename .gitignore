@@ -16,6 +16,7 @@ airflow/data/
 airflow/tmp/
 *.pdf
 *.json
+!src/evaluation/qa_dataset.json
 
 # Docker
 *.pid
@@ -23,3 +24,9 @@ airflow/tmp/
 
 # Env
 .env
+venv/
+.pytest_cache
+
+# Reports
+reports/*.csv
+!reports/.gitkeep

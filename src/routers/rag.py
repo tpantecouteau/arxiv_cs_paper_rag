@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import nest_asyncio
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,6 +7,8 @@ from llama_index.core import PromptTemplate, VectorStoreIndex
 from llama_index.llms.ollama import Ollama
 
 from ..dependencies import get_index, get_llm
+
+logger = logging.getLogger(__name__)
 
 router_rag = APIRouter(prefix="/rag", tags=["RAG"])
 
@@ -18,19 +21,28 @@ def rag_query(
     index: VectorStoreIndex = Depends(get_index),
 ):
     """
-    Pose une question (query) et renvoie la réponse générée à partir des chunks vectorisés.
+    Execute a RAG query against the vector store.
+    
+    Args:
+        query: The user's question.
+        k: Number of documents to retrieve.
+        llm: The LLM instance.
+        index: The vector store index.
+        
+    Returns:
+        dict: The query, answer, and source documents.
     """
     try:
-        # --- 1️⃣ Setup event loop ---
+        # Setup event loop for LlamaIndex
         nest_asyncio.apply()
         try:
             asyncio.get_event_loop()
         except RuntimeError:
             asyncio.set_event_loop(asyncio.new_event_loop())
 
-        print(f"\n🔍 Incoming query: {query}")
+        logger.info(f"Incoming query: {query}")
 
-        # --- 5️⃣ Prompt personnalisé ---
+        # Custom Prompt Template
         prompt_template = PromptTemplate(
             "You are an expert scientific research assistant. Answer ONLY using the provided context.\n\n"
             "CRITICAL: If the question mentions a specific example (like \"I like fish, especially dolphins\"), "
@@ -44,8 +56,7 @@ def rag_query(
             "Answer:"
         )
 
-        # --- 6️⃣ Création du moteur de recherche ---
-        print("🧠 Creating query engine...")
+        # Create Query Engine
         query_engine = index.as_query_engine(
             llm=llm,
             similarity_top_k=k,
@@ -53,26 +64,14 @@ def rag_query(
             response_mode="compact",
         )
 
-        # --- 7️⃣ Exécution de la requête ---
-        print("⚙️ Running semantic search & generation...")
+        # Execute Query
+        logger.info("Running semantic search & generation...")
         response = query_engine.query(query)
 
-        # --- 8️⃣ Logs détaillés ---
-        print("\n✅ RAG query successful!")
-        print(f"🔢 Retrieved {len(response.source_nodes)} source documents:\n")
+        # Log Results
+        logger.info(f"Retrieved {len(response.source_nodes)} source documents.")
 
-        for i, node in enumerate(response.source_nodes, 1):
-            meta = node.node.metadata
-            text = node.node.text[:800].replace("\n", " ")
-            print(f"📄 [{i}] Source Metadata: {meta}")
-            print(f"   Text Preview: {text}...\n")
-            print(f"📏 Chunk length: {len(node.node.text)} chars")
-            print(f"📌 Score: {node.score}")
-
-        print("🧾 Final Answer:")
-        print(str(response))
-
-        # --- 9️⃣ Retour API ---
+        # Return API Response
         return {
             "query": query,
             "answer": str(response),
@@ -87,4 +86,5 @@ def rag_query(
         }
 
     except Exception as e:
+        logger.error(f"RAG query failed: {e}")
         raise HTTPException(status_code=500, detail=f"RAG query failed: {e}")

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # arXiv RAG Assistant 🧠
 
 > AI-powered research paper search and question-answering system using Retrieval-Augmented Generation (RAG)
@@ -340,8 +339,3 @@ For issues or questions:
 - Review troubleshooting section
 
 ---
-
-**Built with ❤️ for researchers and AI enthusiasts**
-=======
-
->>>>>>> b80829b47aa9ce6ac9efc35ebfb0916036bbd24c

@@ -3,15 +3,38 @@ from pathlib import Path
 import logging
 from collections import Counter
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) 
+
+def get_papers_map() -> dict:
+    """Fetch papers and return a map of arxiv_id -> paper_dict."""
+    try:
+        import requests
+        r = requests.get("http://api:8000/papers")
+        r.raise_for_status()
+        return {p["arxiv_id"]: p for p in r.json()}
+    except Exception as e:
+        print(f"❌ Error fetching papers: {e}")
+        return {}
 
 def extract_texts(**context):
     download_dir = Path("/opt/airflow/data/pdfs")
     extracted_dir = Path("/opt/airflow/data/texts")
     extracted_dir.mkdir(parents=True, exist_ok=True)
 
+    papers_map = get_papers_map()
+
     for pdf_file in download_dir.glob("*.pdf"):
-        text_path = extracted_dir / f"{pdf_file.stem}.md"
+        arxiv_id = pdf_file.stem
+        
+        # Security check
+        paper = papers_map.get(arxiv_id)
+        if paper:
+            status = paper.get("status")
+            if status in ["extracted", "chunked", "indexed"]:
+                print(f"⏩ Skipping extraction for {arxiv_id} (status: {status})")
+                continue
+
+        text_path = extracted_dir / f"{arxiv_id}.md"
         
         if text_path.exists():
             print(f"✅ Already extracted: {pdf_file.stem}")
@@ -89,5 +112,19 @@ def extract_texts(**context):
             text_path.write_text(full_text, encoding="utf-8")
             print(f"📄 Extracted (Markdown-ish): {pdf_file.stem}")
             
+            # Update status to EXTRACTED
+            try:
+                import requests
+                requests.patch(f"http://api:8000/papers/{pdf_file.stem}/status?status=extracted", timeout=5)
+            except Exception as status_err:
+                print(f"⚠️ Failed to update status for {pdf_file.stem}: {status_err}")
+            
         except Exception as e:
             print(f"❌ Error extracting {pdf_file.stem}: {e}")
+            
+            # Update status to FAILED
+            try:
+                import requests
+                requests.patch(f"http://api:8000/papers/{pdf_file.stem}/status?status=failed", timeout=5)
+            except Exception as status_err:
+                print(f"⚠️ Failed to update status for {pdf_file.stem}: {status_err}")

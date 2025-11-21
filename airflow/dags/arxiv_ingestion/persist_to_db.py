@@ -12,9 +12,12 @@ def persist_via_api(**context):
     for paper_id in papers:
         try:
             paper = papers[paper_id]
+            paper["status"] = "pending"  # Set initial status
             resp = requests.post("http://api:8000/papers/", json=paper, timeout=10)
             if resp.status_code in (200, 201):
                 print(f"✅ Inserted {paper.get('arxiv_id')}")
+            elif resp.status_code == 400:
+                print(f"Already in DB")
             else:
                 print(
                     f"❌ Failed ({resp.status_code}) for {paper.get('arxiv_id')}: {resp.text}"

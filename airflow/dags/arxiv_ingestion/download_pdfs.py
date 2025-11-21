@@ -27,6 +27,12 @@ def download_pfds(**context):
     download_dir.mkdir(parents=True, exist_ok=True)
 
     for paper in papers:
+        # Security check: Skip if already downloaded or processed further
+        status = paper.get("status")
+        if status in ["downloaded", "extracted", "chunked", "indexed"]:
+            print(f"⏩ Skipping {paper.get('arxiv_id')} (status: {status})")
+            continue
+
         pdf_url = paper.get("pdf_url")
         arxiv_id = paper.get("arxiv_id")
 
@@ -35,6 +41,7 @@ def download_pfds(**context):
             continue
 
         pdf_path = download_dir / f"{arxiv_id}.pdf"
+        
         if pdf_path.exists():
             print(f"✅ Already downloaded: {arxiv_id}")
             continue
@@ -66,8 +73,20 @@ def download_pfds(**context):
                 raise ValueError("Fichier PDF corrompu ou illisible")
 
             print(f"📥 Téléchargé : {arxiv_id} ({pdf_path.stat().st_size // 1024} Ko)")
+            
+            # Update status to DOWNLOADED
+            try:
+                requests.patch(f"http://api:8000/papers/{arxiv_id}/status?status=downloaded", timeout=5)
+            except Exception as status_err:
+                print(f"⚠️ Failed to update status for {arxiv_id}: {status_err}")
 
         except Exception as e:
             print(f"❌ Erreur téléchargement {arxiv_id}: {e}")
             if pdf_path.exists():
                 pdf_path.unlink(missing_ok=True)
+            
+            # Update status to FAILED
+            try:
+                requests.patch(f"http://api:8000/papers/{arxiv_id}/status?status=failed", timeout=5)
+            except Exception as status_err:
+                print(f"⚠️ Failed to update status for {arxiv_id}: {status_err}")

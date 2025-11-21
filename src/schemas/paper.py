@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from datetime import datetime
-$
+from ..models.paper import PaperStatus
+
 
 class PaperRead(BaseModel):
     id: int
@@ -12,6 +13,7 @@ class PaperRead(BaseModel):
     pdf_url: str | None = None
     published_at: datetime | None = None
     ingested_at: datetime
+    status: PaperStatus
 
     class Config:
         from_attributes = True

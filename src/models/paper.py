@@ -1,5 +1,15 @@
-from sqlmodel import SQLModel, Field
+from enum import Enum
 from datetime import datetime
+from sqlmodel import SQLModel, Field
+
+
+class PaperStatus(str, Enum):
+    pending = "pending"
+    downloaded = "downloaded"
+    extracted = "extracted"
+    chunked = "chunked"
+    indexed = "indexed"
+    failed = "failed"
 
 
 class Paper(SQLModel, table=True):
@@ -21,3 +31,4 @@ class Paper(SQLModel, table=True):
     pdf_url: str | None = None
     published_at: datetime | None = None
     ingested_at: datetime = Field(default_factory=datetime.utcnow)
+    status: PaperStatus = Field(default=PaperStatus.pending)
