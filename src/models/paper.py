@@ -1,6 +1,7 @@
-from enum import Enum
 from datetime import datetime
-from sqlmodel import SQLModel, Field
+from enum import Enum
+
+from sqlmodel import Field, SQLModel
 
 
 class PaperStatus(str, Enum):
@@ -13,11 +14,6 @@ class PaperStatus(str, Enum):
 
 
 class Paper(SQLModel, table=True):
-    """
-    Base Postgres table for storing arXiv paper metadata.
-    Week 2: basic metadata only (no embeddings, no vector search yet).
-    """
-
     __tablename__ = "papers"
     __allow_unmapped__ = True
     __table_args__ = {"extend_existing": True}

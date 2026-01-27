@@ -1,22 +1,30 @@
+import logging
 import os
-import urllib
 import urllib.request
 
+log = logging.getLogger(__name__)
 
-def fetch_arxiv_data(**context) -> str:
-    """Fetch data from arXiv API."""
-    ARXIV_SEARCH_QUERY = os.getenv("ARXIV_SEARCH_QUERY", "all:electron")
-    ARXIV_MAX_RESULTS = os.getenv("ARXIV_MAX_RESULTS", "10")
+ARXIV_API = "http://export.arxiv.org/api/query"
+
+
+def fetch_arxiv_data(**context):
+    search_query = os.getenv("ARXIV_SEARCH_QUERY", "all:electron")
+    max_results = os.getenv("ARXIV_MAX_RESULTS", "10")
+    
+    url = f"{ARXIV_API}?search_query={search_query}&max_results={max_results}"
+    
     try:
-        url = f"http://export.arxiv.org/api/query?search_query={ARXIV_SEARCH_QUERY}&max_results={ARXIV_MAX_RESULTS}"
-        data = urllib.request.urlopen(url)
-        decoded_data = data.read().decode("utf-8")
-        if len(decoded_data) == 0:
-            print("⚠️ Warning: No data fetched from arXiv.")
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            data = resp.read().decode("utf-8")
+        
+        if not data:
+            log.warning("Empty response from arXiv")
             return ""
-        print(f"✅ Fetched data from arXiv: {len(decoded_data)} characters.")
-        context["ti"].xcom_push(key="arxiv_xml_data", value=decoded_data)
-        return data.read().decode("utf-8")
+        
+        log.info("Fetched %d bytes from arXiv", len(data))
+        context["ti"].xcom_push(key="arxiv_xml_data", value=data)
+        return data
+        
     except Exception as e:
-        print(f"Error fetching data from arXiv: {e}")
+        log.error("arXiv fetch failed: %s", e)
         return ""

@@ -1,92 +1,83 @@
+import logging
 from pathlib import Path
 
 import requests
-from airflow.models import TaskInstance
 from utils import is_valid_pdf
 
+log = logging.getLogger(__name__)
 
-def get_papers_from_api() -> list[dict]:
-    """Récupère la liste des papiers depuis l'API FastAPI."""
+API_BASE = "http://api:8000"
+MIN_PDF_SIZE = 50_000
+
+
+def _fetch_papers():
     try:
-        r = requests.get("http://api:8000/papers")
-        r.raise_for_status()
-        papers = r.json()
-        print(f"✅ Retrieved {len(papers)} papers from API.")
-        return papers
-    except Exception as e:
-        print(f"❌ Error fetching papers from API: {e}")
+        resp = requests.get(f"{API_BASE}/papers", timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.RequestException as e:
+        log.error("Failed to fetch papers: %s", e)
         return []
+
+
+def _update_status(arxiv_id, status):
+    try:
+        requests.patch(f"{API_BASE}/papers/{arxiv_id}/status?status={status}", timeout=5)
+    except requests.RequestException as e:
+        log.warning("Status update failed for %s: %s", arxiv_id, e)
 
 
 def download_pfds(**context):
-    papers = get_papers_from_api()
+    papers = _fetch_papers()
     if not papers:
-        print("⚠️ No papers to download.")
+        log.warning("No papers to download")
         return []
+
     download_dir = Path("/opt/airflow/data/pdfs")
     download_dir.mkdir(parents=True, exist_ok=True)
 
     for paper in papers:
-        # Security check: Skip if already downloaded or processed further
+        arxiv_id = paper.get("arxiv_id")
+        pdf_url = paper.get("pdf_url")
         status = paper.get("status")
-        if status in ["downloaded", "extracted", "chunked", "indexed"]:
-            print(f"⏩ Skipping {paper.get('arxiv_id')} (status: {status})")
+
+        if status in ("downloaded", "extracted", "chunked", "indexed"):
+            log.debug("Skipping %s (status: %s)", arxiv_id, status)
             continue
 
-        pdf_url = paper.get("pdf_url")
-        arxiv_id = paper.get("arxiv_id")
-
         if not pdf_url:
-            print(f"⚠️ No PDF URL for {arxiv_id}")
+            log.warning("No PDF URL for %s", arxiv_id)
             continue
 
         pdf_path = download_dir / f"{arxiv_id}.pdf"
-        
         if pdf_path.exists():
-            print(f"✅ Already downloaded: {arxiv_id}")
+            log.debug("Already downloaded: %s", arxiv_id)
             continue
 
         try:
-            # Suivre les redirections
-            response = requests.get(
-                pdf_url, allow_redirects=True, stream=True, timeout=30
-            )
-            response.raise_for_status()
+            resp = requests.get(pdf_url, allow_redirects=True, stream=True, timeout=30)
+            resp.raise_for_status()
 
-            # Vérification du type MIME
-            content_type = response.headers.get("Content-Type", "")
+            content_type = resp.headers.get("Content-Type", "")
             if "application/pdf" not in content_type:
-                raise ValueError(f"Contenu non PDF ({content_type})")
-            # Écriture binaire
+                raise ValueError(f"Invalid content type: {content_type}")
+
             with open(pdf_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
+                for chunk in resp.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
 
-            # Vérifie que le fichier n’est pas vide
-            if pdf_path.stat().st_size < 50_000:
-                raise ValueError(
-                    f"Fichier PDF trop petit ({pdf_path.stat().st_size} octets)"
-                )
+            if pdf_path.stat().st_size < MIN_PDF_SIZE:
+                raise ValueError(f"PDF too small ({pdf_path.stat().st_size} bytes)")
 
             if not is_valid_pdf(pdf_path):
-                raise ValueError("Fichier PDF corrompu ou illisible")
+                raise ValueError("Corrupt or unreadable PDF")
 
-            print(f"📥 Téléchargé : {arxiv_id} ({pdf_path.stat().st_size // 1024} Ko)")
-            
-            # Update status to DOWNLOADED
-            try:
-                requests.patch(f"http://api:8000/papers/{arxiv_id}/status?status=downloaded", timeout=5)
-            except Exception as status_err:
-                print(f"⚠️ Failed to update status for {arxiv_id}: {status_err}")
+            log.info("Downloaded %s (%d KB)", arxiv_id, pdf_path.stat().st_size // 1024)
+            _update_status(arxiv_id, "downloaded")
 
         except Exception as e:
-            print(f"❌ Erreur téléchargement {arxiv_id}: {e}")
+            log.error("Download failed for %s: %s", arxiv_id, e)
             if pdf_path.exists():
                 pdf_path.unlink(missing_ok=True)
-            
-            # Update status to FAILED
-            try:
-                requests.patch(f"http://api:8000/papers/{arxiv_id}/status?status=failed", timeout=5)
-            except Exception as status_err:
-                print(f"⚠️ Failed to update status for {arxiv_id}: {status_err}")
+            _update_status(arxiv_id, "failed")

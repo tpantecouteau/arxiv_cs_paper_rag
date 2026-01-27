@@ -1,5 +1,5 @@
-from functools import lru_cache
 import asyncio
+from functools import lru_cache
 
 from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.embeddings.ollama import OllamaEmbedding
@@ -13,11 +13,7 @@ from .config import settings
 
 
 @lru_cache
-def get_llm() -> Ollama:
-    """
-    Get the Ollama LLM instance.
-    Uses LRU cache to return the same instance.
-    """
+def get_llm():
     return Ollama(
         model=settings.OLLAMA_MODEL,
         base_url=settings.OLLAMA_HOST,
@@ -27,11 +23,7 @@ def get_llm() -> Ollama:
 
 
 @lru_cache
-def get_embed_model() -> OllamaEmbedding:
-    """
-    Get the Ollama Embedding model instance.
-    Uses LRU cache to return the same instance.
-    """
+def get_embed_model():
     return OllamaEmbedding(
         model_name=settings.OLLAMA_EMBED_MODEL,
         base_url=settings.OLLAMA_HOST,
@@ -39,16 +31,12 @@ def get_embed_model() -> OllamaEmbedding:
 
 
 @lru_cache
-def get_vector_store() -> OpensearchVectorStore:
-    """
-    Get the OpenSearch Vector Store instance.
-    Initializes the asyncio event loop if needed.
-    """
+def get_vector_store():
     try:
         asyncio.get_event_loop()
     except RuntimeError:
         asyncio.set_event_loop(asyncio.new_event_loop())
-        
+
     client = OpensearchVectorClient(
         endpoint=settings.OPENSEARCH_ENDPOINT,
         index=settings.OPENSEARCH_INDEX,
@@ -60,14 +48,12 @@ def get_vector_store() -> OpensearchVectorStore:
     return OpensearchVectorStore(client)
 
 
-def get_index() -> VectorStoreIndex:
-    """
-    Get the LlamaIndex VectorStoreIndex.
-    Combines the vector store and embedding model.
-    """
+def get_index():
     vector_store = get_vector_store()
     embed_model = get_embed_model()
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
     return VectorStoreIndex.from_vector_store(
-        vector_store, storage_context=storage_context, embed_model=embed_model
+        vector_store,
+        storage_context=storage_context,
+        embed_model=embed_model,
     )

@@ -6,11 +6,11 @@ from .routers.papers import router_paper
 from .routers.rag import router_rag
 from .routers.search import router_search
 
-app = FastAPI()
+app = FastAPI(title="arXiv Paper RAG API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ou "*" si tu veux tout autoriser
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -27,7 +27,5 @@ def on_startup():
 
 
 @app.get("/")
-def read_root():
-    return {
-        "Welcome to arxiv-paper-rag API": "This API allows you to interact with arXiv papers using RAG techniques."
-    }
+def root():
+    return {"status": "ok", "service": "arxiv-paper-rag"}

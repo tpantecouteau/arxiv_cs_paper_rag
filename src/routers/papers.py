@@ -9,15 +9,12 @@ router_paper = APIRouter(prefix="/papers", tags=["papers"])
 
 
 @router_paper.get("/", response_model=list[Paper])
-def read_papers(session: Session = Depends(get_session)) -> list[Paper]:
-    """Retrieve all papers."""
-    papers = list_papers(session)
-    return papers
+def read_papers(session: Session = Depends(get_session)):
+    return list_papers(session)
 
 
 @router_paper.get("/{paper_id}", response_model=Paper)
-def read_paper(paper_id: int, session: Session = Depends(get_session)) -> Paper:
-    """Retrieve a paper by its ID."""
+def read_paper(paper_id: int, session: Session = Depends(get_session)):
     paper = get_paper_by_id(session, paper_id)
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -25,16 +22,12 @@ def read_paper(paper_id: int, session: Session = Depends(get_session)) -> Paper:
 
 
 @router_paper.post("/", response_model=Paper)
-def create_paper(paper: Paper, session: Session = Depends(get_session)) -> Paper:
-    """Create a new paper."""
-    # Vérifie si le papier existe déjà (par arxiv_id)
+def create_paper(paper: Paper, session: Session = Depends(get_session)):
     existing = session.exec(
         select(Paper).where(Paper.arxiv_id == paper.arxiv_id)
     ).first()
     if existing:
-        raise HTTPException(
-            status_code=400, detail="Paper with this arxiv_id already exists"
-        )
+        raise HTTPException(status_code=400, detail="Paper already exists")
 
     session.add(paper)
     session.commit()
@@ -42,39 +35,36 @@ def create_paper(paper: Paper, session: Session = Depends(get_session)) -> Paper
     return paper
 
 
-@router_paper.delete("/{paper_id}", response_model=dict)
-def delete_paper(paper_id: int, session: Session = Depends(get_session)) -> Paper:
-    """Delete a paper by its ID."""
+@router_paper.delete("/{paper_id}")
+def delete_paper(paper_id: int, session: Session = Depends(get_session)):
     paper = get_paper_by_id(session, paper_id)
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
     session.delete(paper)
     session.commit()
-    session.refresh(paper)
-    return paper
+    return {"deleted": paper_id}
 
 
-@router_paper.delete("/", response_model=dict)
-def delete_all_papers(session: Session = Depends(get_session)) -> dict:
-    """Delete all papers."""
+@router_paper.delete("/")
+def delete_all_papers(session: Session = Depends(get_session)):
     papers = session.exec(select(Paper)).all()
-    deleted_count = len(papers)
-
-    for paper in papers:
-        session.delete(paper)
-
+    count = len(papers)
+    for p in papers:
+        session.delete(p)
     session.commit()
-    return {"deleted": deleted_count}
+    return {"deleted": count}
+
 
 @router_paper.patch("/{arxiv_id}/status", response_model=Paper)
 def update_paper_status(
-    arxiv_id: str, status: str, session: Session = Depends(get_session)
-) -> Paper:
-    """Update the status of a paper."""
+    arxiv_id: str,
+    status: str,
+    session: Session = Depends(get_session),
+):
     paper = session.exec(select(Paper).where(Paper.arxiv_id == arxiv_id)).first()
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
-    
+
     paper.status = status
     session.add(paper)
     session.commit()

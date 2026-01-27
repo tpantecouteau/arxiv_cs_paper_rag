@@ -4,7 +4,6 @@ from opensearchpy import OpenSearch
 
 router_search = APIRouter(prefix="/search", tags=["search"])
 
-# --- Connexion OpenSearch ---
 client = OpenSearch(
     hosts=[{"host": "opensearch", "port": 9200}],
     http_compress=True,
@@ -15,26 +14,24 @@ client = OpenSearch(
 
 @router_search.get("/")
 def semantic_search(query: str, k: int = 5):
-    """
-    Recherche sémantique de papiers à partir d'une requête texte.
-    """
     try:
-        payload = {"model": "nomic-embed-text", "prompt": query}
-        r = requests.post("http://ollama:11434/api/embeddings", json=payload)
-        r.raise_for_status()
-        embedding = r.json().get("embedding")
+        resp = requests.post(
+            "http://ollama:11434/api/embeddings",
+            json={"model": "nomic-embed-text", "prompt": query},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        embedding = resp.json().get("embedding")
 
         if not embedding:
-            raise HTTPException(
-                status_code=500, detail="Embedding non généré par Ollama"
-            )
+            raise HTTPException(status_code=500, detail="Failed to generate embedding")
 
-        search_body = {
+        body = {
             "size": k,
             "query": {"knn": {"embedding": {"vector": embedding, "k": k}}},
         }
 
-        response = client.search(index="papers_metadata_llama", body=search_body)
+        result = client.search(index="papers_metadata_llama", body=body)
         hits = [
             {
                 "title": hit["_source"]["title"],
@@ -42,10 +39,10 @@ def semantic_search(query: str, k: int = 5):
                 "arxiv_id": hit["_source"]["arxiv_id"],
                 "score": hit["_score"],
             }
-            for hit in response["hits"]["hits"]
+            for hit in result["hits"]["hits"]
         ]
 
         return {"query": query, "results": hits}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur recherche: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

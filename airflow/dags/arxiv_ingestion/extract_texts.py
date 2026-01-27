@@ -1,130 +1,121 @@
-import fitz  # PyMuPDF
-from pathlib import Path
 import logging
 from collections import Counter
+from pathlib import Path
 
-logger = logging.getLogger(__name__) 
+import fitz
+import requests
 
-def get_papers_map() -> dict:
-    """Fetch papers and return a map of arxiv_id -> paper_dict."""
+log = logging.getLogger(__name__)
+
+API_BASE = "http://api:8000"
+HEADER_SIZE_FACTOR = 1.1
+MAX_HEADER_LEN = 100
+
+
+def _fetch_papers_map():
     try:
-        import requests
-        r = requests.get("http://api:8000/papers")
-        r.raise_for_status()
-        return {p["arxiv_id"]: p for p in r.json()}
-    except Exception as e:
-        print(f"❌ Error fetching papers: {e}")
+        resp = requests.get(f"{API_BASE}/papers", timeout=10)
+        resp.raise_for_status()
+        return {p["arxiv_id"]: p for p in resp.json()}
+    except requests.RequestException as e:
+        log.error("Failed to fetch papers: %s", e)
         return {}
 
-def extract_texts(**context):
-    download_dir = Path("/opt/airflow/data/pdfs")
-    extracted_dir = Path("/opt/airflow/data/texts")
-    extracted_dir.mkdir(parents=True, exist_ok=True)
 
-    papers_map = get_papers_map()
+def _update_status(arxiv_id, status):
+    try:
+        requests.patch(f"{API_BASE}/papers/{arxiv_id}/status?status={status}", timeout=5)
+    except requests.RequestException as e:
+        log.warning("Status update failed for %s: %s", arxiv_id, e)
 
-    for pdf_file in download_dir.glob("*.pdf"):
-        arxiv_id = pdf_file.stem
-        
-        # Security check
-        paper = papers_map.get(arxiv_id)
-        if paper:
-            status = paper.get("status")
-            if status in ["extracted", "chunked", "indexed"]:
-                print(f"⏩ Skipping extraction for {arxiv_id} (status: {status})")
+
+def _analyze_font_sizes(doc):
+    """Extract all font sizes from the document to determine body text size."""
+    sizes = []
+    for page in doc:
+        for block in page.get_text("dict")["blocks"]:
+            if block["type"] != 0:
                 continue
+            for line in block["lines"]:
+                for span in line["spans"]:
+                    sizes.append(span["size"])
+    return sizes
 
-        text_path = extracted_dir / f"{arxiv_id}.md"
+
+def _extract_page_text(page, header_threshold):
+    """Extract text from a page, handling two-column layouts."""
+    blocks = page.get_text("dict")["blocks"]
+    text_blocks = [b for b in blocks if b["type"] == 0]
+    
+    mid_x = page.rect.width / 2
+    left = sorted([b for b in text_blocks if b["bbox"][0] < mid_x], key=lambda b: b["bbox"][1])
+    right = sorted([b for b in text_blocks if b["bbox"][0] >= mid_x], key=lambda b: b["bbox"][1])
+    
+    result = ""
+    for block in left + right:
+        block_text = ""
+        is_header = False
         
-        if text_path.exists():
-            print(f"✅ Already extracted: {pdf_file.stem}")
+        for line in block["lines"]:
+            for span in line["spans"]:
+                text = span["text"].strip()
+                if not text:
+                    continue
+                if span["size"] > header_threshold and len(text) < MAX_HEADER_LEN:
+                    is_header = True
+                block_text += text + " "
+        
+        block_text = block_text.strip()
+        if not block_text:
+            continue
+            
+        if is_header:
+            result += f"\n\n## {block_text}\n\n"
+        else:
+            result += block_text + "\n\n"
+    
+    return result
+
+
+def extract_texts(**context):
+    pdf_dir = Path("/opt/airflow/data/pdfs")
+    output_dir = Path("/opt/airflow/data/texts")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    papers_map = _fetch_papers_map()
+
+    for pdf_file in pdf_dir.glob("*.pdf"):
+        arxiv_id = pdf_file.stem
+        paper = papers_map.get(arxiv_id)
+        
+        if paper and paper.get("status") in ("extracted", "chunked", "indexed"):
+            log.debug("Skipping %s (status: %s)", arxiv_id, paper["status"])
+            continue
+
+        output_path = output_dir / f"{arxiv_id}.md"
+        if output_path.exists():
+            log.debug("Already extracted: %s", arxiv_id)
             continue
 
         try:
             doc = fitz.open(pdf_file)
-            full_text = ""
-            
-            # First pass: Analyze font sizes to guess what's a header
-            font_sizes = []
-            for page in doc:
-                blocks = page.get_text("dict")["blocks"]
-                for b in blocks:
-                    if b["type"] == 0:  # text block
-                        for line in b["lines"]:
-                            for span in line["spans"]:
-                                font_sizes.append(span["size"])
+            font_sizes = _analyze_font_sizes(doc)
             
             if not font_sizes:
+                log.warning("No text found in %s", arxiv_id)
                 continue
-                
-            # Most common font size is likely body text
-            common_size = Counter(font_sizes).most_common(1)[0][0]
             
-            # Heuristic: Headers are significantly larger than body text
-            header_threshold = common_size * 1.1
+            body_size = Counter(font_sizes).most_common(1)[0][0]
+            header_threshold = body_size * HEADER_SIZE_FACTOR
             
+            full_text = ""
             for page in doc:
-                # Get text blocks with coordinates
-                blocks = page.get_text("dict")["blocks"]
-                
-                # Sort blocks for two-column layout
-                page_width = page.rect.width
-                mid_x = page_width / 2
-                
-                left_blocks = [b for b in blocks if b["type"] == 0 and b["bbox"][0] < mid_x]
-                right_blocks = [b for b in blocks if b["type"] == 0 and b["bbox"][0] >= mid_x]
-                
-                left_blocks.sort(key=lambda b: b["bbox"][1])
-                right_blocks.sort(key=lambda b: b["bbox"][1])
-                
-                sorted_blocks = left_blocks + right_blocks
-                
-                for b in sorted_blocks:
-                    block_text = ""
-                    is_header = False
-                    
-                    # Check spans for font size
-                    for line in b["lines"]:
-                        for span in line["spans"]:
-                            text = span["text"].strip()
-                            if not text:
-                                continue
-                                
-                            if span["size"] > header_threshold:
-                                # It's a header candidate
-                                # Check if it's short enough to be a header (e.g. < 100 chars)
-                                if len(text) < 100:
-                                    is_header = True
-                            
-                            block_text += text + " "
-                    
-                    block_text = block_text.strip()
-                    if not block_text:
-                        continue
-                        
-                    if is_header:
-                        # Determine level based on size relative to max? 
-                        # For simplicity, just use ## for all detected headers
-                        full_text += f"\n\n## {block_text}\n\n"
-                    else:
-                        full_text += block_text + "\n\n"
+                full_text += _extract_page_text(page, header_threshold)
             
-            text_path.write_text(full_text, encoding="utf-8")
-            print(f"📄 Extracted (Markdown-ish): {pdf_file.stem}")
-            
-            # Update status to EXTRACTED
-            try:
-                import requests
-                requests.patch(f"http://api:8000/papers/{pdf_file.stem}/status?status=extracted", timeout=5)
-            except Exception as status_err:
-                print(f"⚠️ Failed to update status for {pdf_file.stem}: {status_err}")
-            
+            output_path.write_text(full_text, encoding="utf-8")
+            log.info("Extracted: %s", arxiv_id)
+            _update_status(arxiv_id, "extracted")
+
         except Exception as e:
-            print(f"❌ Error extracting {pdf_file.stem}: {e}")
-            
-            # Update status to FAILED
-            try:
-                import requests
-                requests.patch(f"http://api:8000/papers/{pdf_file.stem}/status?status=failed", timeout=5)
-            except Exception as status_err:
-                print(f"⚠️ Failed to update status for {pdf_file.stem}: {status_err}")
+            log.error("Extraction failed for %s: %s", arxiv_id, e)
+            _update_status(arxiv_id, "failed")
